@@ -1,59 +1,71 @@
 from flask import Flask, request, jsonify
-import hmac
-import hashlib
 import os
+import requests
 import openai
 
 app = Flask(__name__)
 
-# Environment Variables
-INTERAKT_WEBHOOK_SECRET = os.getenv("INTERAKT_WEBHOOK_SECRET")
+# Environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
 
-# Set OpenAI API Key
 openai.api_key = OPENAI_API_KEY
 
-
-@app.route('/')
+@app.route("/")
 def home():
-    return jsonify({"status": "Karuvadukadai WhatsApp Bot is Live ✅"}), 200
+    return jsonify({"status": "Karuvadukadai WhatsApp Bot connected ✅"}), 200
 
 
-@app.route('/webhook', methods=['GET', 'POST'])
+@app.route("/webhook", methods=["POST", "GET"])
 def webhook():
-    if request.method == 'GET':
-        # Interakt will check this for verification
+    if request.method == "GET":
         return jsonify({"status": "Webhook active ✅"}), 200
 
+    data = request.json
+    print("Incoming message:", data)
+
     try:
-        # For POST requests (actual messages)
-        signature = request.headers.get("Interakt-Signature", "")
-        body = request.get_data()
+        # Extract WhatsApp number and message text
+        customer_number = data.get("waId") or data.get("phone") or None
+        message_text = data.get("text") or data.get("message") or None
 
-        # Validate signature
-        if INTERAKT_WEBHOOK_SECRET:
-            expected = hmac.new(
-                INTERAKT_WEBHOOK_SECRET.encode(),
-                body,
-                hashlib.sha256
-            ).hexdigest()
+        if not customer_number or not message_text:
+            return jsonify({"error": "Missing message or number"}), 400
 
-            if not hmac.compare_digest(expected, signature):
-                return jsonify({"error": "Invalid signature"}), 401
+        # Send to OpenAI
+        ai_response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are Karuvadukadai’s friendly Tamil-English assistant. Reply in a warm, Tanglish style."},
+                {"role": "user", "content": message_text},
+            ]
+        )
 
-        # Parse the incoming data
-        data = request.get_json()
-        print("📩 Webhook Received:", data)
+        reply_text = ai_response.choices[0].message["content"]
 
-        # Respond to Interakt
+        # Send reply to Interakt
+        send_url = "https://api.interakt.ai/v1/public/message/"
+        headers = {
+            "Authorization": f"Basic {INTERAKT_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "countryCode": "+91",
+            "phoneNumber": str(customer_number),
+            "callbackData": "Karuvadukadai AI Bot",
+            "type": "TEXT",
+            "message": {"text": reply_text}
+        }
+
+        requests.post(send_url, json=payload, headers=headers)
+        print("✅ Replied to:", customer_number)
+
         return jsonify({"success": True}), 200
 
     except Exception as e:
-        print("❌ Webhook Error:", e)
+        print("Webhook Error:", e)
         return jsonify({"error": str(e)}), 500
 
 
-if __name__ == '__main__':
-    # Important for Render
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
