@@ -1,93 +1,85 @@
-from flask import Flask, request, jsonify
 import os
 import requests
-import openai
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Environment variables
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+SHOP_URL = os.getenv("SHOP_URL")
 
-openai.api_key = OPENAI_API_KEY
-
-# Your Shopify Store Base URL
-SHOP_URL = "https://karuvadukadai.com"
-
-@app.route("/")
+@app.route('/')
 def home():
-    return jsonify({"status": "Karuvadukadai WhatsApp AI Bot is Live ✅"}), 200
+    return jsonify({"status": "Karuvadukadai WhatsApp Bot is Live ✅"})
 
-
-@app.route("/webhook", methods=["POST", "GET"])
+@app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
-    if request.method == "GET":
+    if request.method == 'GET':
         return jsonify({"status": "Webhook active ✅"}), 200
 
     data = request.json
     print("Incoming message:", data)
 
     try:
-        # Extract WhatsApp number and message text
-        customer_number = data.get("waId") or data.get("phone") or None
-        message_text = data.get("text") or data.get("message") or None
+        message_type = data.get("type")
+        if message_type == "message_received":
+            customer = data["data"]["customer"]
+            mobile = customer["wa_id"]
+            message_text = data["data"]["message"]["text"]["body"]
 
-        if not customer_number or not message_text:
-            return jsonify({"error": "Missing message or number"}), 400
+            print(f"Customer message: {message_text}")
 
-        # --- AI Prompt ---
-        prompt = f"""
-        You are 'Karuvadukadai' — a friendly Tamil seafood seller and assistant.
-        You help customers with:
-        - Product recommendations (Vanjaram, Nethili, Thirukai, etc.)
-        - Explaining prices and offers
-        - Helping them place orders from {SHOP_URL}
-        - Providing tracking link or AWB number when asked
-        - Answering general seafood questions
-        - Always reply in warm Tanglish (Tamil + English mix)
+            # Generate AI response
+            ai_reply = generate_ai_reply(message_text)
 
-        Example style:
-        "Vanakkam sir 😊! Vanjaram fresh karuvadu available irukku 😋. Ithu link: {SHOP_URL}/products/kingfish-karuvadu"
-        "Ungal order tracking link: {SHOP_URL}/pages/track-order"
-        "Nandri sir 🙏! Karuvadukadai choose pannathukku thanks ❤️."
+            # Send back to Interakt
+            payload = {
+                "phoneNumber": mobile,
+                "message": {
+                    "text": ai_reply
+                }
+            }
 
-        Customer message: {message_text}
-        """
+            headers = {
+                "Authorization": INTERAKT_API_KEY,
+                "Content-Type": "application/json"
+            }
 
-        # --- Send to OpenAI ---
-        ai_response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are Karuvadukadai’s friendly seafood shop assistant."},
-                {"role": "user", "content": prompt},
-            ]
-        )
+            response = requests.post(
+                "https://api.interakt.ai/v1/public/message/",
+                json=payload,
+                headers=headers
+            )
 
-        reply_text = ai_response.choices[0].message["content"]
-
-        # --- Send reply via Interakt ---
-        send_url = "https://api.interakt.ai/v1/public/message/"
-        headers = {
-            "Authorization": f"Basic {INTERAKT_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "countryCode": "+91",
-            "phoneNumber": str(customer_number),
-            "callbackData": "Karuvadukadai AI Bot",
-            "type": "TEXT",
-            "message": {"text": reply_text}
-        }
-
-        requests.post(send_url, json=payload, headers=headers)
-        print("✅ Replied to:", customer_number)
-
-        return jsonify({"success": True}), 200
+            print("Reply status:", response.status_code, response.text)
+        return jsonify({"status": "ok"}), 200
 
     except Exception as e:
-        print("Webhook Error:", e)
+        print("Webhook error:", e)
         return jsonify({"error": str(e)}), 500
 
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+def generate_ai_reply(message):
+    import openai
+    openai.api_key = OPENAI_API_KEY
+
+    prompt = f"""
+    You are 'Karuvadukadai' — a friendly Tamil seafood seller from Tamil Nadu.
+    Reply naturally in Tanglish (Tamil-English mix) to help customers about dry fish, prices, or tracking orders.
+    Example tone:
+    - "Vanakkam bro 😊! Fresh Vanjaram karuvadu available 😋. Link inga 👉 {SHOP_URL}/products/kingfish-karuvadu"
+    - "Neenga order panni irukeengala sir? Tracking number kudunga, naan check panren."
+    Message: {message}
+    """
+
+    completion = openai.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "system", "content": prompt}]
+    )
+
+    reply = completion.choices[0].message.content.strip()
+    return reply
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
