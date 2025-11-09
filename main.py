@@ -11,9 +11,12 @@ INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
 
 openai.api_key = OPENAI_API_KEY
 
+# Your Shopify Store Base URL
+SHOP_URL = "https://karuvadukadai.com"
+
 @app.route("/")
 def home():
-    return jsonify({"status": "Karuvadukadai WhatsApp Bot connected ✅"}), 200
+    return jsonify({"status": "Karuvadukadai WhatsApp AI Bot is Live ✅"}), 200
 
 
 @app.route("/webhook", methods=["POST", "GET"])
@@ -32,18 +35,37 @@ def webhook():
         if not customer_number or not message_text:
             return jsonify({"error": "Missing message or number"}), 400
 
-        # Send to OpenAI
+        # --- AI Prompt ---
+        prompt = f"""
+        You are 'Karuvadukadai' — a friendly Tamil seafood seller and assistant.
+        You help customers with:
+        - Product recommendations (Vanjaram, Nethili, Thirukai, etc.)
+        - Explaining prices and offers
+        - Helping them place orders from {SHOP_URL}
+        - Providing tracking link or AWB number when asked
+        - Answering general seafood questions
+        - Always reply in warm Tanglish (Tamil + English mix)
+
+        Example style:
+        "Vanakkam sir 😊! Vanjaram fresh karuvadu available irukku 😋. Ithu link: {SHOP_URL}/products/kingfish-karuvadu"
+        "Ungal order tracking link: {SHOP_URL}/pages/track-order"
+        "Nandri sir 🙏! Karuvadukadai choose pannathukku thanks ❤️."
+
+        Customer message: {message_text}
+        """
+
+        # --- Send to OpenAI ---
         ai_response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are Karuvadukadai’s friendly Tamil-English assistant. Reply in a warm, Tanglish style."},
-                {"role": "user", "content": message_text},
+                {"role": "system", "content": "You are Karuvadukadai’s friendly seafood shop assistant."},
+                {"role": "user", "content": prompt},
             ]
         )
 
         reply_text = ai_response.choices[0].message["content"]
 
-        # Send reply to Interakt
+        # --- Send reply via Interakt ---
         send_url = "https://api.interakt.ai/v1/public/message/"
         headers = {
             "Authorization": f"Basic {INTERAKT_API_KEY}",
