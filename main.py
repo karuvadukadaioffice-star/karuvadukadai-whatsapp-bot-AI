@@ -1,58 +1,64 @@
+from flask import Flask, request, jsonify
 import os
 import requests
-from flask import Flask, request, jsonify
+import openai
 
 app = Flask(__name__)
 
+# Environment variables
 INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
+INTERAKT_WEBHOOK_SECRET = os.getenv("INTERAKT_WEBHOOK_SECRET")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SHOP_URL = os.getenv("SHOP_URL")
+
+openai.api_key = OPENAI_API_KEY
+
 
 @app.route('/')
 def home():
     return jsonify({"status": "Karuvadukadai WhatsApp Bot is Live ✅"})
+
 
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
         return jsonify({"status": "Webhook active ✅"}), 200
 
-    data = request.json
-    print("Incoming message:", data)
-
     try:
-        message_type = data.get("type")
-        if message_type == "message_received":
+        data = request.get_json()
+        print("Incoming message:", data)
+
+        if data.get("type") == "message_received":
             customer = data["data"]["customer"]
             mobile = customer["wa_id"]
             message_text = data["data"]["message"]["text"]["body"]
 
             print(f"Customer message: {message_text}")
 
-            # Generate AI response
+            # Generate AI reply
             ai_reply = generate_ai_reply(message_text)
 
-            # Send back to Interakt
+            # Send reply to Interakt
             payload = {
                 "phoneNumber": mobile,
-                "message": {
-                    "text": ai_reply
-                }
+                "message": {"text": ai_reply}
             }
 
             headers = {
-                "Authorization": INTERAKT_API_KEY,
+                "Authorization": f"Basic {INTERAKT_API_KEY.split(' ')[-1]}",
                 "Content-Type": "application/json"
             }
 
-            response = requests.post(
+            send_response = requests.post(
                 "https://api.interakt.ai/v1/public/message/",
                 json=payload,
                 headers=headers
             )
 
-            print("Reply status:", response.status_code, response.text)
-        return jsonify({"status": "ok"}), 200
+            print("Reply status:", send_response.status_code, send_response.text)
+            return jsonify({"status": "ok"}), 200
+
+        return jsonify({"ignored": True}), 200
 
     except Exception as e:
         print("Webhook error:", e)
@@ -60,25 +66,35 @@ def webhook():
 
 
 def generate_ai_reply(message):
-    import openai
-    openai.api_key = OPENAI_API_KEY
+    try:
+        prompt = f"""
+        You are 'Karuvadukadai' — a friendly Tamil seafood seller.
+        Reply in Tanglish (Tamil-English mix). Always respond kindly.
+        If customer asks about:
+        - Vanjaram → Give price and link: {SHOP_URL}/products/kingfish-karuvadu
+        - Nethili → Mention it's fresh and give link: {SHOP_URL}/products/nethili-dry-fish
+        - Tracking → Ask for tracking number and offer to help
+        - Combo or Ready to Eat → Suggest items from Ready to Eat section
+        Message: {message}
+        """
 
-    prompt = f"""
-    You are 'Karuvadukadai' — a friendly Tamil seafood seller from Tamil Nadu.
-    Reply naturally in Tanglish (Tamil-English mix) to help customers about dry fish, prices, or tracking orders.
-    Example tone:
-    - "Vanakkam bro 😊! Fresh Vanjaram karuvadu available 😋. Link inga 👉 {SHOP_URL}/products/kingfish-karuvadu"
-    - "Neenga order panni irukeengala sir? Tracking number kudunga, naan check panren."
-    Message: {message}
-    """
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": message}
+            ],
+            temperature=0.8,
+            max_tokens=250
+        )
 
-    completion = openai.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "system", "content": prompt}]
-    )
+        reply = response["choices"][0]["message"]["content"].strip()
+        print("AI reply:", reply)
+        return reply
 
-    reply = completion.choices[0].message.content.strip()
-    return reply
+    except Exception as e:
+        print("OpenAI error:", e)
+        return "Server busy irukku bro 😅! Konjam later try pannunga."
 
 
 if __name__ == '__main__':
