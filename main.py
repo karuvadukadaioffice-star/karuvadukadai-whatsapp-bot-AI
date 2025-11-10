@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 import os
 import requests
-import openai
+from openai import OpenAI
 import json
 
 app = Flask(__name__)
@@ -11,9 +11,8 @@ INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SHOP_URL = os.getenv("SHOP_URL")
 
-openai.api_key = OPENAI_API_KEY
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Local JSON storage for tracking info
 TRACKING_FILE = "tracking_store.json"
 
 # ---------------- Helper Functions ----------------
@@ -73,7 +72,6 @@ def webhook():
             mobile = customer.get("wa_id", "")
             msg_data = data["data"].get("message", {})
 
-            # 🧠 Handle different message formats safely
             if "text" in msg_data and isinstance(msg_data["text"], dict):
                 message_text = msg_data["text"].get("body", "").lower().strip()
             else:
@@ -114,7 +112,7 @@ def send_whatsapp_message(mobile, message):
         payload = {
             "countryCode": "+91",
             "phoneNumber": mobile,
-            "type": "Text",  # ✅ Fixed from PlainText → Text
+            "type": "Text",  # ✅ Correct format
             "message": {"text": message}
         }
 
@@ -128,35 +126,35 @@ def send_whatsapp_message(mobile, message):
     except Exception as e:
         print("❌ Send message error:", e)
 
-# ---------------- AI Reply Generator ----------------
+# ---------------- AI Reply Generator (new OpenAI SDK) ----------------
 def generate_ai_reply(message):
     try:
         prompt = f"""
         You are 'Karuvadukadai' — a friendly seafood seller bot.
-        Reply in Tanglish (Tamil-English mix) — short, polite, friendly.
-        Mention products with links where possible.
+        Reply in Tanglish (Tamil-English mix), short and polite.
+        Add links if customers ask about products.
 
         Examples:
         - Vanjaram → "Vanjaram iruku bro 🐟! Super quality. Link 👉 {SHOP_URL}/products/kingfish-karuvadu"
         - Nethili → "Fresh nethili karuvadu ready bro! 🔥 Link 👉 {SHOP_URL}/products/nethili-dry-fish"
         - Ready to eat → "Naanga have Ready-to-Eat seafoods 🍛 👉 {SHOP_URL}/collections/ready-to-eat"
         - Combo → "Combo packs iruku bro 😍! Check 👉 {SHOP_URL}/collections/combo"
-        - Price/Stock → Respond friendly
+        - Price or stock → Give friendly tone
         - Delivery or tracking → Ask politely for tracking number if not known
         Message: {message}
         """
 
-        response = openai.ChatCompletion.create(
+        completion = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": message}
             ],
             temperature=0.8,
-            max_tokens=200
+            max_tokens=250
         )
 
-        reply = response["choices"][0]["message"]["content"].strip()
+        reply = completion.choices[0].message.content.strip()
         print("🤖 AI reply:", reply)
         return reply
 
