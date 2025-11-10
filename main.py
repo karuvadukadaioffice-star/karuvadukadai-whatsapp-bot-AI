@@ -6,7 +6,7 @@ import json
 
 app = Flask(__name__)
 
-# Environment Variables
+# ---------------- Environment Variables ----------------
 INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SHOP_URL = os.getenv("SHOP_URL")
@@ -17,7 +17,6 @@ openai.api_key = OPENAI_API_KEY
 TRACKING_FILE = "tracking_store.json"
 
 # ---------------- Helper Functions ----------------
-
 def load_tracking_data():
     try:
         if os.path.exists(TRACKING_FILE):
@@ -33,12 +32,12 @@ def save_tracking_data(data):
 
 tracking_data = load_tracking_data()
 
-# ---------------- Flask Routes ----------------
-
+# ---------------- Home Route ----------------
 @app.route('/')
 def home():
     return jsonify({"status": "Karuvadukadai WhatsApp Bot is Live ✅"})
 
+# ---------------- Webhook Route ----------------
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
@@ -74,7 +73,7 @@ def webhook():
             mobile = customer.get("wa_id", "")
             msg_data = data["data"].get("message", {})
 
-            # 🧠 Fix for Interakt message structure
+            # 🧠 Handle different message formats safely
             if "text" in msg_data and isinstance(msg_data["text"], dict):
                 message_text = msg_data["text"].get("body", "").lower().strip()
             else:
@@ -82,7 +81,7 @@ def webhook():
 
             print(f"💬 {mobile}: {message_text}")
 
-            # ✅ If user asks about tracking
+            # ✅ Tracking info reply
             if "track" in message_text or "tracking" in message_text:
                 if mobile in tracking_data:
                     t = tracking_data[mobile]
@@ -109,15 +108,13 @@ def webhook():
         print("❌ Webhook error:", e)
         return jsonify({"error": str(e)}), 500
 
-
 # ---------------- WhatsApp Message Sender ----------------
-
 def send_whatsapp_message(mobile, message):
     try:
         payload = {
             "countryCode": "+91",
             "phoneNumber": mobile,
-            "type": "PlainText",
+            "type": "Text",  # ✅ Fixed from PlainText → Text
             "message": {"text": message}
         }
 
@@ -131,9 +128,7 @@ def send_whatsapp_message(mobile, message):
     except Exception as e:
         print("❌ Send message error:", e)
 
-
 # ---------------- AI Reply Generator ----------------
-
 def generate_ai_reply(message):
     try:
         prompt = f"""
@@ -169,8 +164,6 @@ def generate_ai_reply(message):
         print("❌ OpenAI error:", e)
         return "Server busy irukku bro 😅! Konjam later try pannunga."
 
-
-# ---------------- Run Flask App ----------------
-
+# ---------------- Run Server ----------------
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
