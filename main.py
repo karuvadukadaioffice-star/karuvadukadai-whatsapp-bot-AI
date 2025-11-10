@@ -2,21 +2,20 @@ from flask import Flask, request, jsonify
 import os
 import requests
 import openai
-import base64
 import json
 
 app = Flask(__name__)
 
-# Environment variables
+# Environment Variables
 INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SHOP_URL = os.getenv("SHOP_URL")
 
 openai.api_key = OPENAI_API_KEY
 
+# Local JSON storage for tracking info
 TRACKING_FILE = "tracking_store.json"
 
-# ------------------- Helper: Load/Save JSON -------------------
 def load_tracking_data():
     try:
         if os.path.exists(TRACKING_FILE):
@@ -30,15 +29,12 @@ def save_tracking_data(data):
     with open(TRACKING_FILE, "w") as f:
         json.dump(data, f)
 
-# Load existing tracking info
 tracking_data = load_tracking_data()
 
-# ------------------- Home Route -------------------
 @app.route('/')
 def home():
     return jsonify({"status": "Karuvadukadai WhatsApp Bot is Live ✅"})
 
-# ------------------- Webhook Route -------------------
 @app.route('/webhook', methods=['GET', 'POST'])
 def webhook():
     if request.method == 'GET':
@@ -49,7 +45,7 @@ def webhook():
         print("📩 Incoming:", data)
         event_type = data.get("type")
 
-        # ✅ 1. When Interakt sends tracking updates (save it permanently)
+        # ✅ Save tracking updates from Interakt events
         if event_type == "event" and "order" in data.get("data", {}):
             order = data["data"]["order"]
             mobile = order.get("customer", {}).get("wa_id")
@@ -68,16 +64,15 @@ def webhook():
 
             return jsonify({"status": "tracking_saved"}), 200
 
-        # ✅ 2. When customer sends a message
+        # ✅ Customer message
         elif event_type == "message_received":
             customer = data["data"]["customer"]
             mobile = customer["wa_id"]
             message_text = data["data"]["message"]["text"]["body"].lower().strip()
-
             print(f"💬 {mobile}: {message_text}")
 
-            # If user asks about tracking
-            if "tracking" in message_text or "track" in message_text:
+            # Check if customer asks about tracking
+            if "track" in message_text or "tracking" in message_text:
                 if mobile in tracking_data:
                     t = tracking_data[mobile]
                     reply = (
@@ -86,7 +81,7 @@ def webhook():
                     )
                 else:
                     reply = (
-                        "Bro, unga order tracking details not found 😅.\n"
+                        "Bro unga order tracking details not found 😅.\n"
                         "Once dispatch aagum bothu update pannuren 🙏."
                     )
             else:
@@ -103,7 +98,7 @@ def webhook():
         print("❌ Webhook error:", e)
         return jsonify({"error": str(e)}), 500
 
-# ------------------- Send WhatsApp Message -------------------
+# ✅ Send WhatsApp Message
 def send_whatsapp_message(mobile, message):
     try:
         payload = {
@@ -114,7 +109,7 @@ def send_whatsapp_message(mobile, message):
         }
 
         headers = {
-            "Authorization": f"Basic {base64.b64encode(INTERAKT_API_KEY.encode()).decode()}",
+            "Authorization": f"Basic {INTERAKT_API_KEY}",  # ✅ fixed (no re-encode)
             "Content-Type": "application/json"
         }
 
@@ -123,22 +118,21 @@ def send_whatsapp_message(mobile, message):
     except Exception as e:
         print("❌ Send message error:", e)
 
-# ------------------- AI Reply Generator -------------------
+# ✅ AI Reply Generator
 def generate_ai_reply(message):
     try:
         prompt = f"""
-        You are 'Karuvadukadai' — a friendly seafood store bot.
-        Reply in Tanglish (Tamil-English mix) — short, kind, and polite.
-        Mention links if customer asks about products.
+        You are 'Karuvadukadai' — a friendly seafood seller bot.
+        Reply in Tanglish (Tamil-English mix) — short, polite, friendly.
+        Mention products with links where possible.
 
         Examples:
-        - Vanjaram → "Vanjaram iruku bro 🐟! Super quality. Link: {SHOP_URL}/products/kingfish-karuvadu"
-        - Nethili → "Fresh nethili karuvadu ready bro! 🔥 Link: {SHOP_URL}/products/nethili-dry-fish"
-        - Ready to eat → "Naanga have Ready-to-Eat seafoods bro 🍛 👉 {SHOP_URL}/collections/ready-to-eat"
+        - Vanjaram → "Vanjaram iruku bro 🐟! Super quality. Link 👉 {SHOP_URL}/products/kingfish-karuvadu"
+        - Nethili → "Fresh nethili karuvadu ready bro! 🔥 Link 👉 {SHOP_URL}/products/nethili-dry-fish"
+        - Ready to eat → "Naanga have Ready-to-Eat seafoods 🍛 👉 {SHOP_URL}/collections/ready-to-eat"
         - Combo → "Combo packs iruku bro 😍! Check 👉 {SHOP_URL}/collections/combo"
-        - Price or stock → Give friendly tone
-        - Delivery or tracking → Ask politely for tracking number if not known.
-
+        - Price/Stock → Respond friendly
+        - Delivery or tracking → Ask politely for tracking number if not known
         Message: {message}
         """
 
@@ -160,6 +154,5 @@ def generate_ai_reply(message):
         print("❌ OpenAI error:", e)
         return "Server busy irukku bro 😅! Konjam later try pannunga."
 
-# ------------------- Run Server -------------------
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
