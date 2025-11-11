@@ -13,7 +13,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SHOP_URL = "https://karuvadukadai.com"
 
 # =========================
-# 💬 FUNCTION: SEND WHATSAPP MESSAGE
+# 💬 SEND MESSAGE TO WHATSAPP
 # =========================
 def send_whatsapp_message(mobile, message):
     try:
@@ -21,9 +21,9 @@ def send_whatsapp_message(mobile, message):
             "countryCode": "+91",
             "phoneNumber": str(mobile),
             "callbackData": "Karuvadukadai",
-            "messageType": "TEXT",  # ✅ FIXED: Correct Interakt field
-            "text": {
-                "body": message
+            "messageType": "TEXT",  # ✅ Correct Interakt field
+            "content": {            # ✅ Fixed field structure
+                "text": message
             }
         }
 
@@ -49,7 +49,7 @@ def send_whatsapp_message(mobile, message):
 
 
 # =========================
-# 🧠 FUNCTION: GENERATE AI REPLY
+# 🧠 GENERATE AI REPLY
 # =========================
 def generate_ai_reply(user_text):
     try:
@@ -66,8 +66,8 @@ def generate_ai_reply(user_text):
                     "role": "system",
                     "content": (
                         "You are 'Karuvadukadai' — a friendly Tamil seafood seller bot 🐟.\n"
-                        "Reply in Tanglish (Tamil-English mix), friendly & short.\n"
-                        "Use casual 'bro' tone, like a shop owner replying on WhatsApp.\n"
+                        "Reply naturally in Tanglish (Tamil-English mix), helpful, and friendly.\n"
+                        "Talk like a local Thoothukudi seafood seller — casual and polite.\n"
                         f"- Vanjaram → {SHOP_URL}/products/kingfish-karuvadu\n"
                         f"- Nethili → {SHOP_URL}/products/nethili-dry-fish\n"
                         f"- Ready to Eat → {SHOP_URL}/collections/ready-to-eat\n"
@@ -93,7 +93,7 @@ def generate_ai_reply(user_text):
 
 
 # =========================
-# 🌊 WEBHOOK: RECEIVE INCOMING MESSAGES
+# 🌊 WEBHOOK HANDLER
 # =========================
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -108,7 +108,6 @@ def webhook():
             print("⚙️ Ignored event type:", event_type)
             return jsonify({"status": "ignored"}), 200
 
-        # ✅ Extract message safely
         message_obj = data.get("data", {}).get("message", {})
         message_text = (
             message_obj.get("text")
@@ -124,10 +123,7 @@ def webhook():
 
         print(f"💬 From {phone}: {message_text}")
 
-        # ✅ Generate AI reply
         reply = generate_ai_reply(message_text)
-
-        # ✅ Send reply via Interakt
         send_whatsapp_message(phone, reply)
 
         return jsonify({"status": "success"}), 200
@@ -137,16 +133,10 @@ def webhook():
         return jsonify({"error": str(e)}), 500
 
 
-# =========================
-# 🏠 ROOT TEST ROUTE
-# =========================
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"status": "Karuvadukadai WhatsApp Bot is Live 🐟"}), 200
 
 
-# =========================
-# 🚀 RUN APP (LOCAL TEST)
-# =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
