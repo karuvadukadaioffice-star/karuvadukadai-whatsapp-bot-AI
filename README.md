@@ -1,23 +1,39 @@
-README.md
-# Karuvadukadai WhatsApp AI Bot 🤖
+# Karuvadukadai WhatsApp Bot 🤖🐟
 
-This bot connects **Interakt WhatsApp API** with **ChatGPT-5** to provide Tamil + English customer support.
+A smart AI chatbot integrated with **Interakt WhatsApp API** and **OpenAI GPT-3.5-turbo**,  
+deployed on **Render** to assist seafood buyers in Tanglish (Tamil-English).
 
-## 🧠 Features
-- Auto-reply with GPT-5 intelligence
-- Handles Tamil-English mixed conversations
-- Responds to order-tracking queries
-- Works on free Render.com hosting
+---
 
-## ⚙️ Environment Variables
-Add these in your Render Environment tab:
-- `OPENAI_API_KEY` = your OpenAI key
-- `INTERAKT_API_KEY` = your Interakt API key
-- `INTERAKT_WEBHOOK_SECRET` = f6fe41ec-93df-41b3-913b-f0f47ea9377
+## 🚀 Features
+- Replies automatically to WhatsApp messages
+- Understands product queries (Vanjaram, Nethili, Ready-to-Eat, etc.)
+- Fetches tracking numbers dynamically from Interakt events
+- Supports Tamil-English conversation style
+- Fully serverless on Render
 
-## 🚀 Deploy on Render
-1. Create a [Render](https://render.com) account  
-2. Connect this GitHub repo  
-3. Build command → `pip install -r requirements.txt`  
-4. Start command → `python main.py`  
-5. Use your permanent URL in Interakt Webhook Settings
+---
+
+## ⚙️ Environment Variables (set in Render)
+| Key | Example Value |
+|-----|----------------|
+| `INTERAKT_API_KEY` | Base64 Interakt Public API Key |
+| `OPENAI_API_KEY` | `sk-xxxxxx...` |
+| `SHOP_URL` | `https://karuvadukadai.com` |
+
+---
+
+## 🛠️ Deploy
+1. Fork this repo to GitHub  
+2. Connect repo to Render  
+3. Set environment variables above  
+4. Deploy → Manual Deploy → **Deploy latest commit**
+
+---
+
+## 🔍 Test Commands
+| Message | Bot Reply |
+|----------|------------|
+| Vanjaram iruka bro | Product link reply |
+| Tracking number sollunga | Fetches tracking info |
+| Ready to eat | Sends Ready-to-Eat collection link |
