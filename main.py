@@ -132,7 +132,7 @@ def send_whatsapp_message(mobile, message):
         payload = {
             "countryCode": "+91",
             "phoneNumber": str(mobile),
-            "type": "PlainText",
+            "type": "Text",
             "message": {
                 "text": message
             }
@@ -200,4 +200,5 @@ def generate_ai_reply(message):
 # ==============================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
+
 
