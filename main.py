@@ -126,14 +126,14 @@ def webhook():
 # ==============================
 # 📤 SEND MESSAGE TO WHATSAPP
 # ==============================
+# ✅ Send WhatsApp Message
 def send_whatsapp_message(mobile, message):
     try:
         payload = {
-            "phoneNumber": str(mobile),
             "countryCode": "+91",
-            "type": "text",
+            "phoneNumber": str(mobile),
+            "type": "PlainText",
             "message": {
-                "contentType": "text",
                 "text": message
             }
         }
@@ -152,6 +152,7 @@ def send_whatsapp_message(mobile, message):
 
     except Exception as e:
         print("❌ Send message error:", e)
+
 
 
 # ==============================
@@ -199,3 +200,4 @@ def generate_ai_reply(message):
 # ==============================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
+
