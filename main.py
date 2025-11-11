@@ -18,10 +18,10 @@ SHOP_URL = "https://karuvadukadai.com"
 def send_whatsapp_message(mobile, message):
     try:
         payload = {
-            "phoneNumber": str(mobile),
             "countryCode": "+91",
+            "phoneNumber": str(mobile),
             "callbackData": "Karuvadukadai",
-            "type": "TEXT",  # ✅ Must be uppercase TEXT as per Interakt docs
+            "messageType": "TEXT",  # ✅ FIXED: Correct Interakt field
             "text": {
                 "body": message
             }
@@ -66,8 +66,8 @@ def generate_ai_reply(user_text):
                     "role": "system",
                     "content": (
                         "You are 'Karuvadukadai' — a friendly Tamil seafood seller bot 🐟.\n"
-                        "Reply shortly in Tanglish (Tamil-English mix) — polite, natural & helpful.\n"
-                        "Always sound like a shop owner chatting with customers (bro/sir tone).\n"
+                        "Reply in Tanglish (Tamil-English mix), friendly & short.\n"
+                        "Use casual 'bro' tone, like a shop owner replying on WhatsApp.\n"
                         f"- Vanjaram → {SHOP_URL}/products/kingfish-karuvadu\n"
                         f"- Nethili → {SHOP_URL}/products/nethili-dry-fish\n"
                         f"- Ready to Eat → {SHOP_URL}/collections/ready-to-eat\n"
@@ -108,7 +108,7 @@ def webhook():
             print("⚙️ Ignored event type:", event_type)
             return jsonify({"status": "ignored"}), 200
 
-        # ✅ Extract message text safely
+        # ✅ Extract message safely
         message_obj = data.get("data", {}).get("message", {})
         message_text = (
             message_obj.get("text")
@@ -127,7 +127,7 @@ def webhook():
         # ✅ Generate AI reply
         reply = generate_ai_reply(message_text)
 
-        # ✅ Send reply to customer via Interakt
+        # ✅ Send reply via Interakt
         send_whatsapp_message(phone, reply)
 
         return jsonify({"status": "success"}), 200
