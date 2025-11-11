@@ -18,11 +18,12 @@ SHOP_URL = "https://karuvadukadai.com"
 def send_whatsapp_message(mobile, message):
     try:
         payload = {
-            "countryCode": "+91",
             "phoneNumber": str(mobile),
-            "type": "text",  # ✅ must be lowercase
-            "message": {
-                "text": message
+            "countryCode": "+91",
+            "callbackData": "Karuvadukadai",
+            "type": "TEXT",  # ✅ Must be uppercase TEXT as per Interakt docs
+            "text": {
+                "body": message
             }
         }
 
@@ -65,8 +66,8 @@ def generate_ai_reply(user_text):
                     "role": "system",
                     "content": (
                         "You are 'Karuvadukadai' — a friendly Tamil seafood seller bot 🐟.\n"
-                        "Reply shortly in Tanglish (Tamil-English mix) — polite and natural.\n"
-                        "Always sound like a helpful shop owner (bro/sir tone).\n"
+                        "Reply shortly in Tanglish (Tamil-English mix) — polite, natural & helpful.\n"
+                        "Always sound like a shop owner chatting with customers (bro/sir tone).\n"
                         f"- Vanjaram → {SHOP_URL}/products/kingfish-karuvadu\n"
                         f"- Nethili → {SHOP_URL}/products/nethili-dry-fish\n"
                         f"- Ready to Eat → {SHOP_URL}/collections/ready-to-eat\n"
@@ -107,12 +108,12 @@ def webhook():
             print("⚙️ Ignored event type:", event_type)
             return jsonify({"status": "ignored"}), 200
 
-        # ✅ Extract customer and message
+        # ✅ Extract message text safely
         message_obj = data.get("data", {}).get("message", {})
         message_text = (
             message_obj.get("text")
             or message_obj.get("body")
-            or message_obj.get("content")  # ✅ Fix for Interakt payload
+            or message_obj.get("content")
         )
         customer = data.get("data", {}).get("customer", {})
         phone = customer.get("phoneNumber")
