@@ -1,138 +1,26 @@
 from flask import Flask, request, jsonify
 import os
 import requests
-import openai
 import json
 
 app = Flask(__name__)
 
-# ==============================
-# 🔑 ENVIRONMENT VARIABLES
-# ==============================
+# =========================
+# 🔑 Environment Variables
+# =========================
 INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-SHOP_URL = os.getenv("SHOP_URL")
+SHOP_URL = "https://karuvadukadai.com"
 
-openai.api_key = OPENAI_API_KEY
-
-# ==============================
-# 📦 TRACKING DATA STORAGE
-# ==============================
-TRACKING_FILE = "tracking_store.json"
-
-def load_tracking_data():
-    try:
-        if os.path.exists(TRACKING_FILE):
-            with open(TRACKING_FILE, "r") as f:
-                return json.load(f)
-    except:
-        pass
-    return {}
-
-def save_tracking_data(data):
-    with open(TRACKING_FILE, "w") as f:
-        json.dump(data, f)
-
-tracking_data = load_tracking_data()
-
-
-# ==============================
-# 🌐 HOME ROUTE
-# ==============================
-@app.route('/')
-def home():
-    return jsonify({"status": "Karuvadukadai WhatsApp Bot is Live ✅"})
-
-
-# ==============================
-# 📬 WEBHOOK HANDLER
-# ==============================
-@app.route('/webhook', methods=['GET', 'POST'])
-def webhook():
-    if request.method == 'GET':
-        return jsonify({"status": "Webhook active ✅"}), 200
-
-    try:
-        data = request.get_json()
-        print("📩 Incoming:", json.dumps(data, indent=2))
-        event_type = data.get("type")
-
-        # ✅ 1️⃣ TRACKING EVENTS FROM INTERAKT
-        if event_type == "event" and "order" in data.get("data", {}):
-            order = data["data"]["order"]
-            mobile = order.get("customer", {}).get("wa_id")
-            tracking_number = order.get("tracking_number", "").strip()
-            tracking_link = order.get("tracking_link", "https://franchexpress.com")
-            status = order.get("status", "Processing")
-
-            if mobile:
-                tracking_data[mobile] = {
-                    "tracking_number": tracking_number,
-                    "tracking_link": tracking_link,
-                    "status": status
-                }
-                save_tracking_data(tracking_data)
-                print(f"✅ Saved tracking for {mobile}: {tracking_number} ({status})")
-
-            return jsonify({"status": "tracking_saved"}), 200
-
-
-        # ✅ 2️⃣ CUSTOMER MESSAGES
-        elif event_type == "message_received":
-            customer = data["data"].get("customer", {})
-            mobile = customer.get("wa_id")
-            message_obj = data["data"].get("message", {})
-            message_text = ""
-
-            # Safely extract text message
-            if "text" in message_obj and "body" in message_obj["text"]:
-                message_text = message_obj["text"]["body"].lower().strip()
-            else:
-                message_text = "unknown message"
-
-            print(f"💬 {mobile}: {message_text}")
-
-            # Tracking request
-            if "track" in message_text or "tracking" in message_text:
-                if mobile in tracking_data:
-                    t = tracking_data[mobile]
-                    reply = (
-                        f"Unga tracking number {t['tracking_number']} 📦\n"
-                        f"Track link 👉 {t['tracking_link']}"
-                    )
-                else:
-                    reply = (
-                        "Bro unga order tracking details not found 😅.\n"
-                        "Dispatch aagumbodhu update pannuren 🙏."
-                    )
-            elif message_text == "unknown message":
-                reply = "Bro unga message type support panna mudiyala 😅. Text message la anuppunga 🙏."
-            else:
-                reply = generate_ai_reply(message_text)
-
-            send_whatsapp_message(mobile, reply)
-            return jsonify({"status": "ok"}), 200
-
-        # Ignore other event types
-        else:
-            print("⚙️ Ignored event type:", event_type)
-            return jsonify({"ignored": True}), 200
-
-    except Exception as e:
-        print("❌ Webhook error:", e)
-        return jsonify({"error": str(e)}), 500
-
-
-# ==============================
-# 📤 SEND MESSAGE TO WHATSAPP
-# ==============================
-# ✅ Send WhatsApp Message
+# =========================
+# 💬 FUNCTION: Send WhatsApp Message
+# =========================
 def send_whatsapp_message(mobile, message):
     try:
         payload = {
             "countryCode": "+91",
             "phoneNumber": str(mobile),
-            "type": "Text",
+            "type": "text",   # ✅ must be lowercase
             "message": {
                 "text": message
             }
@@ -148,57 +36,113 @@ def send_whatsapp_message(mobile, message):
             json=payload,
             headers=headers
         )
-        print("📤 WhatsApp reply:", r.status_code, r.text)
+
+        print("\n📤 --- WhatsApp Message Sent ---")
+        print("➡️ Payload:", json.dumps(payload, indent=2))
+        print("➡️ Status Code:", r.status_code)
+        print("➡️ Response:", r.text)
+        print("📤 ------------------------------\n")
 
     except Exception as e:
         print("❌ Send message error:", e)
 
 
-
-# ==============================
-# 🤖 AI MESSAGE GENERATOR
-# ==============================
-def generate_ai_reply(message):
+# =========================
+# 🧠 FUNCTION: Generate AI Reply
+# =========================
+def generate_ai_reply(user_text):
     try:
-        prompt = f"""
-        You are 'Karuvadukadai' — a friendly seafood seller bot.
-        Reply in Tanglish (Tamil-English mix) — short, polite, and natural.
-        Mention product links where relevant.
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json"
+        }
 
-        Examples:
-        - Vanjaram → "Vanjaram iruku bro 🐟! Super quality. Link 👉 {SHOP_URL}/products/kingfish-karuvadu"
-        - Nethili → "Fresh nethili karuvadu ready bro! 🔥 Link 👉 {SHOP_URL}/products/nethili-dry-fish"
-        - Ready to eat → "Naanga have Ready-to-Eat seafoods 🍛 👉 {SHOP_URL}/collections/ready-to-eat"
-        - Combo → "Combo packs iruku bro 😍! Check 👉 {SHOP_URL}/collections/combo"
-        - Price or stock → Reply kindly
-        - Delivery → Ask politely if customer needs tracking info
-
-        Customer Message: {message}
-        """
-
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": message}
+        payload = {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are 'Karuvadukadai' — a friendly seafood seller bot 🐟.\n"
+                        "Reply in Tanglish (Tamil-English mix) and keep it short & natural.\n"
+                        "Be polite and helpful.\n"
+                        "Mention links where possible:\n"
+                        f"- Vanjaram: {SHOP_URL}/products/kingfish-karuvadu\n"
+                        f"- Nethili: {SHOP_URL}/products/nethili-dry-fish\n"
+                        f"- Ready to Eat: {SHOP_URL}/collections/ready-to-eat\n"
+                        f"- Combo Packs: {SHOP_URL}/collections/combo"
+                    )
+                },
+                {"role": "user", "content": user_text}
             ],
-            temperature=0.8,
-            max_tokens=200
-        )
+            "max_tokens": 150,
+            "temperature": 0.8
+        }
 
-        reply = response["choices"][0]["message"]["content"].strip()
-        print("🤖 AI reply:", reply)
-        return reply
+        r = requests.post(url, headers=headers, json=payload)
+        data = r.json()
+        print("🧠 AI Response Raw:", data)
+
+        ai_reply = data["choices"][0]["message"]["content"].strip()
+        return ai_reply
 
     except Exception as e:
-        print("❌ OpenAI error:", e)
-        return "Server busy irukku bro 😅! Konjam later try pannunga."
+        print("❌ AI Error:", e)
+        return "Server busy iruku bro 😅 konjam later try pannunga!"
 
 
-# ==============================
-# 🚀 RUN SERVER
-# ==============================
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+# =========================
+# 🌊 WEBHOOK: Receive WhatsApp Messages
+# =========================
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    try:
+        data = request.get_json()
+        print("\n📩 --- Incoming Webhook ---")
+        print(json.dumps(data, indent=2))
+        print("📩 -------------------------\n")
+
+        event_type = data.get("event", "")
+        if event_type != "message_received":
+            print("⚙️ Ignored event type:", event_type)
+            return jsonify({"status": "ignored"}), 200
+
+        # ✅ Extract message and customer info
+        message_obj = data.get("data", {}).get("message", {})
+        message_text = message_obj.get("text") or message_obj.get("body")
+        customer = data.get("data", {}).get("customer", {})
+        phone = customer.get("phoneNumber")
+
+        if not message_text or not phone:
+            print("⚠️ Missing text or phone number")
+            return jsonify({"status": "invalid"}), 400
+
+        print(f"💬 From {phone}: {message_text}")
+
+        # ✅ AI reply
+        reply = generate_ai_reply(message_text)
+
+        # ✅ Send reply via Interakt
+        send_whatsapp_message(phone, reply)
+
+        return jsonify({"status": "success"}), 200
+
+    except Exception as e:
+        print("❌ Webhook error:", e)
+        return jsonify({"error": str(e)}), 500
 
 
+# =========================
+# 🏠 HOME ROUTE
+# =========================
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"status": "Karuvadukadai WhatsApp Bot is Live 🐟"}), 200
+
+
+# =========================
+# 🚀 RUN APP
+# =========================
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
