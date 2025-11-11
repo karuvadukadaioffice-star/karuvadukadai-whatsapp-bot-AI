@@ -6,21 +6,21 @@ import json
 app = Flask(__name__)
 
 # =========================
-# 🔑 Environment Variables
+# 🔑 ENVIRONMENT VARIABLES
 # =========================
 INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SHOP_URL = "https://karuvadukadai.com"
 
 # =========================
-# 💬 FUNCTION: Send WhatsApp Message
+# 💬 FUNCTION: SEND WHATSAPP MESSAGE
 # =========================
 def send_whatsapp_message(mobile, message):
     try:
         payload = {
             "countryCode": "+91",
             "phoneNumber": str(mobile),
-            "type": "text",   # ✅ must be lowercase
+            "type": "text",  # ✅ must be lowercase
             "message": {
                 "text": message
             }
@@ -48,7 +48,7 @@ def send_whatsapp_message(mobile, message):
 
 
 # =========================
-# 🧠 FUNCTION: Generate AI Reply
+# 🧠 FUNCTION: GENERATE AI REPLY
 # =========================
 def generate_ai_reply(user_text):
     try:
@@ -64,14 +64,13 @@ def generate_ai_reply(user_text):
                 {
                     "role": "system",
                     "content": (
-                        "You are 'Karuvadukadai' — a friendly seafood seller bot 🐟.\n"
-                        "Reply in Tanglish (Tamil-English mix) and keep it short & natural.\n"
-                        "Be polite and helpful.\n"
-                        "Mention links where possible:\n"
-                        f"- Vanjaram: {SHOP_URL}/products/kingfish-karuvadu\n"
-                        f"- Nethili: {SHOP_URL}/products/nethili-dry-fish\n"
-                        f"- Ready to Eat: {SHOP_URL}/collections/ready-to-eat\n"
-                        f"- Combo Packs: {SHOP_URL}/collections/combo"
+                        "You are 'Karuvadukadai' — a friendly Tamil seafood seller bot 🐟.\n"
+                        "Reply shortly in Tanglish (Tamil-English mix) — polite and natural.\n"
+                        "Always sound like a helpful shop owner (bro/sir tone).\n"
+                        f"- Vanjaram → {SHOP_URL}/products/kingfish-karuvadu\n"
+                        f"- Nethili → {SHOP_URL}/products/nethili-dry-fish\n"
+                        f"- Ready to Eat → {SHOP_URL}/collections/ready-to-eat\n"
+                        f"- Combo → {SHOP_URL}/collections/combo"
                     )
                 },
                 {"role": "user", "content": user_text}
@@ -82,7 +81,7 @@ def generate_ai_reply(user_text):
 
         r = requests.post(url, headers=headers, json=payload)
         data = r.json()
-        print("🧠 AI Response Raw:", data)
+        print("🧠 AI Response Raw:", json.dumps(data, indent=2))
 
         ai_reply = data["choices"][0]["message"]["content"].strip()
         return ai_reply
@@ -93,7 +92,7 @@ def generate_ai_reply(user_text):
 
 
 # =========================
-# 🌊 WEBHOOK: Receive WhatsApp Messages
+# 🌊 WEBHOOK: RECEIVE INCOMING MESSAGES
 # =========================
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -108,22 +107,26 @@ def webhook():
             print("⚙️ Ignored event type:", event_type)
             return jsonify({"status": "ignored"}), 200
 
-        # ✅ Extract message and customer info
+        # ✅ Extract customer and message
         message_obj = data.get("data", {}).get("message", {})
-        message_text = message_obj.get("text") or message_obj.get("body")
+        message_text = (
+            message_obj.get("text")
+            or message_obj.get("body")
+            or message_obj.get("content")  # ✅ Fix for Interakt payload
+        )
         customer = data.get("data", {}).get("customer", {})
         phone = customer.get("phoneNumber")
 
         if not message_text or not phone:
-            print("⚠️ Missing text or phone number")
+            print("⚠️ Missing text or phone number in webhook data")
             return jsonify({"status": "invalid"}), 400
 
         print(f"💬 From {phone}: {message_text}")
 
-        # ✅ AI reply
+        # ✅ Generate AI reply
         reply = generate_ai_reply(message_text)
 
-        # ✅ Send reply via Interakt
+        # ✅ Send reply to customer via Interakt
         send_whatsapp_message(phone, reply)
 
         return jsonify({"status": "success"}), 200
@@ -134,7 +137,7 @@ def webhook():
 
 
 # =========================
-# 🏠 HOME ROUTE
+# 🏠 ROOT TEST ROUTE
 # =========================
 @app.route("/", methods=["GET"])
 def home():
@@ -142,7 +145,7 @@ def home():
 
 
 # =========================
-# 🚀 RUN APP
+# 🚀 RUN APP (LOCAL TEST)
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
