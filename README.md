@@ -1,39 +1,18 @@
-# Karuvadukadai WhatsApp Bot 🤖🐟
+# Karuvadukadai WhatsApp AI Bot 🐟
 
-A smart AI chatbot integrated with **Interakt WhatsApp API** and **OpenAI GPT-3.5-turbo**,  
-deployed on **Render** to assist seafood buyers in Tanglish (Tamil-English).
+A friendly Tamil-English seafood assistant that chats with customers on WhatsApp via Interakt.shop.
 
----
+### 🔧 Features
+- Tamil + English mixed (Tanglish) replies
+- Fetches product details dynamically
+- Uses OpenAI GPT for personalized responses
+- Works for **session messages (within 24h)** on Interakt.shop
+- Hosted easily on **Render**
 
-## 🚀 Features
-- Replies automatically to WhatsApp messages
-- Understands product queries (Vanjaram, Nethili, Ready-to-Eat, etc.)
-- Fetches tracking numbers dynamically from Interakt events
-- Supports Tamil-English conversation style
-- Fully serverless on Render
-
----
-
-## ⚙️ Environment Variables (set in Render)
-| Key | Example Value |
-|-----|----------------|
-| `INTERAKT_API_KEY` | Base64 Interakt Public API Key |
-| `OPENAI_API_KEY` | `sk-xxxxxx...` |
-| `SHOP_URL` | `https://karuvadukadai.com` |
-
----
-
-## 🛠️ Deploy
-1. Fork this repo to GitHub  
-2. Connect repo to Render  
-3. Set environment variables above  
-4. Deploy → Manual Deploy → **Deploy latest commit**
-
----
-
-## 🔍 Test Commands
-| Message | Bot Reply |
-|----------|------------|
-| Vanjaram iruka bro | Product link reply |
-| Tracking number sollunga | Fetches tracking info |
-| Ready to eat | Sends Ready-to-Eat collection link |
+### 🚀 Setup
+1. Fork this repo on GitHub.
+2. Add environment variables in Render:
+   - `INTERAKT_API_KEY` = Your Interakt.shop API key (base64 encoded)
+   - `OPENAI_API_KEY` = Your OpenAI API key
+3. Deploy to Render.
+4. Add webhook URL in Interakt:
