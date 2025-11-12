@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-import requests, os
+import requests, os, json
 
 app = Flask(__name__)
 
@@ -30,16 +30,20 @@ def generate_ai_reply(user_message):
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a helpful Tamil-English assistant for Karuvadukadai.com. Reply naturally, friendly, short, and relevant to dry fish, seafood, or delivery questions."
+                    "content": (
+                        "You are a friendly Tamil-English chatbot for Karuvadukadai.com. "
+                        "Keep replies short, relevant to seafood, dry fish, or delivery."
+                    )
                 },
                 {"role": "user", "content": user_message}
             ]
         }
-
-        res = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data)
+        res = requests.post("https://api.openai.com/v1/chat/completions",
+                            headers=headers, json=data)
+        print("🧠 OpenAI Response Code:", res.status_code)
         if res.status_code != 200:
             print("❌ OpenAI Error:", res.text)
-            return "Server busy bro 😔 Please try again later."
+            return "Server busy bro 😔 Try again later."
 
         reply = res.json()["choices"][0]["message"]["content"]
         print("🧠 AI Reply Generated:", reply)
@@ -56,7 +60,6 @@ def generate_ai_reply(user_message):
 def send_whatsapp_message(mobile, message):
     try:
         url = "https://app.interakt.io/api/public/v2/message/"
-
         payload = {
             "countryCode": "+91",
             "phoneNumber": str(mobile),
@@ -64,18 +67,14 @@ def send_whatsapp_message(mobile, message):
             "type": "Text",
             "message": {"text": message}
         }
-
         headers = {
             "Authorization": f"Basic {INTERAKT_API_KEY}",
             "Content-Type": "application/json"
         }
-
         response = requests.post(url, headers=headers, json=payload)
-        print("📤 Interakt v2 Response Code:", response.status_code)
-        print("📤 Interakt v2 Response:", response.text)
-
+        print("📤 Interakt Response Code:", response.status_code)
+        print("📤 Interakt Response:", response.text)
         return response.status_code == 200
-
     except Exception as e:
         print("❌ Interakt Send Error:", e)
         return False
@@ -87,41 +86,38 @@ def send_whatsapp_message(mobile, message):
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        data = request.get_json()
-        print("📩 Incoming Webhook:")
-        print(data)
+        data = request.get_json(force=True)
+        print("📩 Incoming Webhook Raw:")
+        print(json.dumps(data, indent=2, ensure_ascii=False))
 
-        # Extract message details
-        event = data.get("event", "")
-        message_data = data.get("data", {}).get("message", {})
-        customer_data = data.get("data", {}).get("customer", {})
+        customer = data.get("data", {}).get("customer", {})
+        msg_obj = data.get("data", {}).get("message", {})
 
-        mobile = customer_data.get("phoneNumber")
-        message_type = message_data.get("type", "").lower()
-        message_text = message_data.get("content")
+        mobile = customer.get("phoneNumber")
+        msg_type = (msg_obj.get("type") or "").lower()
 
-        # Detect actual message content
-        if not message_text:
-            print("⚠️ No text message found, skipping.")
-            return jsonify({"status": "ignored"}), 200
+        # Try multiple possible paths for content
+        msg_text = msg_obj.get("content")
+        if isinstance(msg_text, dict):
+            msg_text = msg_text.get("text") or msg_text.get("body")
 
         print(f"📞 From: {mobile}")
-        print(f"💬 Message Type: {message_type}")
-        print(f"💬 Message Text: {message_text}")
+        print(f"💬 Type: {msg_type}")
+        print(f"💬 Text Extracted: {msg_text}")
 
-        # Skip system/template/campaign messages
-        if message_type not in ["text"]:
-            print("⏸ Ignored non-text or campaign message.")
+        if not msg_text:
+            print("⚠️ No text content found, skipping.")
             return jsonify({"status": "ignored"}), 200
 
-        # Generate AI reply
-        ai_reply = generate_ai_reply(message_text)
+        if msg_type not in ["text"]:
+            print("⏸ Non-text message ignored.")
+            return jsonify({"status": "ignored"}), 200
 
-        # Send reply via Interakt v2 API
+        ai_reply = generate_ai_reply(msg_text)
         sent = send_whatsapp_message(mobile, ai_reply)
 
         if sent:
-            print("✅ AI Reply sent to", mobile)
+            print("✅ AI reply sent to", mobile)
         else:
             print("❌ Failed to send AI reply")
 
@@ -139,7 +135,7 @@ def webhook():
 def home():
     return jsonify({
         "status": "active",
-        "message": "Karuvadukadai WhatsApp AI Bot (v2 Interakt) ✅"
+        "message": "Karuvadukadai WhatsApp AI Bot (universal Interakt) ✅"
     })
 
 
