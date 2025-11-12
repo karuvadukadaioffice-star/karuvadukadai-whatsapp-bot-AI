@@ -4,7 +4,7 @@ import requests, os
 app = Flask(__name__)
 
 # ==========================================================
-# 🔑 Load Environment Variables (from Render Environment tab)
+# 🔑 Environment Keys
 # ==========================================================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
@@ -17,7 +17,7 @@ print("===========================================")
 
 
 # ==========================================================
-# 🧠 Generate AI Reply using OpenAI ChatGPT API
+# 🧠 AI Reply using OpenAI
 # ==========================================================
 def generate_ai_reply(user_message):
     try:
@@ -31,7 +31,7 @@ def generate_ai_reply(user_message):
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are a friendly Tamil-English assistant for Karuvadukadai.com. Keep replies short, natural and helpful."
+                    "content": "You are a friendly Tamil-English chatbot for Karuvadukadai.com. Keep replies short, casual, and relevant to dry fish, seafood, and delivery topics."
                 },
                 {"role": "user", "content": user_message}
             ]
@@ -45,16 +45,16 @@ def generate_ai_reply(user_message):
             return "Server busy bro 😔 Try again later."
 
         reply = response.json()["choices"][0]["message"]["content"]
-        print("🧠 AI Reply Generated:", reply)
+        print("🧠 AI Reply:", reply)
         return reply
 
     except Exception as e:
-        print("❌ Exception in OpenAI:", e)
-        return "Something went wrong, bro 😔"
+        print("❌ AI Error:", e)
+        return "Error generating reply bro 😔"
 
 
 # ==========================================================
-# 💬 Send Message Back to Customer using Interakt API
+# 💬 Send Message via Interakt API
 # ==========================================================
 def send_whatsapp_message(mobile, message):
     try:
@@ -62,9 +62,7 @@ def send_whatsapp_message(mobile, message):
             "countryCode": "+91",
             "phoneNumber": str(mobile),
             "type": "text",
-            "message": {
-                "text": message
-            }
+            "message": {"text": message}
         }
 
         headers = {
@@ -74,8 +72,8 @@ def send_whatsapp_message(mobile, message):
 
         url = "https://app.interakt.io/api/public/message/"
         r = requests.post(url, json=payload, headers=headers)
-        print("📤 Interakt API Response Code:", r.status_code)
-        print("📤 Interakt Response Text:", r.text)
+        print("📤 Interakt API Status:", r.status_code)
+        print("📤 Interakt Response:", r.text)
         return r.status_code == 200
 
     except Exception as e:
@@ -84,38 +82,49 @@ def send_whatsapp_message(mobile, message):
 
 
 # ==========================================================
-# 🌊 Webhook Endpoint — Receives Messages from Interakt
+# 🌊 Webhook Receiver
 # ==========================================================
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         data = request.get_json()
-        print("📩 Incoming Webhook Payload:")
+        print("📩 Incoming Webhook:")
         print(data)
 
+        # Step 1: Identify event or fallback
         event = data.get("event")
-        if event != "message_received":
-            print("⚙️ Ignored Event Type:", event)
-            return jsonify({"status": "ignored"}), 200
+        if not event:
+            print("⚠️ No 'event' key found — treating as potential session message.")
 
+        # Step 2: Extract customer info and message
         customer = data.get("data", {}).get("customer", {})
+        message_obj = data.get("data", {}).get("message", {})
+
         mobile = customer.get("phoneNumber")
-        message = data.get("data", {}).get("message", {}).get("content")
+        message_type = message_obj.get("type", "").lower()
+        message_text = message_obj.get("content")
 
         print(f"📞 From: {mobile}")
-        print(f"💬 Message: {message}")
+        print(f"💬 Type: {message_type}")
+        print(f"💬 Text: {message_text}")
 
-        if not mobile or not message:
-            print("⚠️ Missing mobile or message field in webhook")
-            return jsonify({"status": "error"}), 400
+        # Step 3: Ignore templates, media, and marketing pushes
+        if message_type not in ["text"]:
+            print("⏸ Ignored non-text message or template.")
+            return jsonify({"status": "ignored"}), 200
 
-        ai_reply = generate_ai_reply(message)
+        if not mobile or not message_text:
+            print("⚠️ Missing phone number or message.")
+            return jsonify({"status": "missing_fields"}), 400
+
+        # Step 4: Generate AI reply
+        ai_reply = generate_ai_reply(message_text)
         success = send_whatsapp_message(mobile, ai_reply)
 
         if success:
-            print("✅ Reply sent successfully to", mobile)
+            print("✅ AI reply sent to", mobile)
         else:
-            print("❌ Failed to send reply")
+            print("❌ Failed to send AI reply to", mobile)
 
         return jsonify({"status": "ok"}), 200
 
@@ -125,18 +134,15 @@ def webhook():
 
 
 # ==========================================================
-# 🏠 Home Route — for testing the Render instance
+# 🏠 Home Endpoint
 # ==========================================================
 @app.route('/', methods=['GET'])
 def home():
-    return jsonify({
-        "status": "active",
-        "message": "Karuvadukadai WhatsApp AI Bot is running ✅"
-    })
+    return jsonify({"status": "active", "message": "Karuvadukadai WhatsApp AI Bot ✅"})
 
 
 # ==========================================================
-# 🚀 Start Flask App
+# 🚀 Start App
 # ==========================================================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
