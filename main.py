@@ -1,16 +1,13 @@
 from flask import Flask, request, jsonify
-import requests, os, json
+import requests, os, json, datetime
 
 app = Flask(__name__)
 
-# ==========================================================
-# 🔑 Environment Keys
-# ==========================================================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
 
 print("===========================================")
-print("🚀 Karuvadukadai WhatsApp AI Bot Starting...")
+print("🚀 Karuvadukadai WhatsApp AI Bot (Hybrid) Starting...")
 print("✅ OpenAI Key Loaded:", "Yes" if OPENAI_API_KEY else "❌ Missing")
 print("✅ Interakt Key Loaded:", "Yes" if INTERAKT_API_KEY else "❌ Missing")
 print("===========================================")
@@ -32,32 +29,27 @@ def generate_ai_reply(user_message):
                     "role": "system",
                     "content": (
                         "You are a friendly Tamil-English chatbot for Karuvadukadai.com. "
-                        "Keep replies short, relevant to seafood, dry fish, or delivery."
+                        "Keep replies short, relevant to seafood, dry fish, or delivery help."
                     )
                 },
                 {"role": "user", "content": user_message}
             ]
         }
-        res = requests.post("https://api.openai.com/v1/chat/completions",
-                            headers=headers, json=data)
-        print("🧠 OpenAI Response Code:", res.status_code)
+        res = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data)
         if res.status_code != 200:
             print("❌ OpenAI Error:", res.text)
             return "Server busy bro 😔 Try again later."
 
-        reply = res.json()["choices"][0]["message"]["content"]
-        print("🧠 AI Reply Generated:", reply)
-        return reply
-
+        return res.json()["choices"][0]["message"]["content"]
     except Exception as e:
         print("❌ AI Exception:", e)
         return "Error generating reply bro 😔"
 
 
 # ==========================================================
-# 💬 Send WhatsApp Message via Interakt v2 API
+# 💬 Send session message (inside 24 h window)
 # ==========================================================
-def send_whatsapp_message(mobile, message):
+def send_session_message(mobile, message):
     try:
         url = "https://app.interakt.io/api/public/v2/message/"
         payload = {
@@ -71,12 +63,39 @@ def send_whatsapp_message(mobile, message):
             "Authorization": f"Basic {INTERAKT_API_KEY}",
             "Content-Type": "application/json"
         }
-        response = requests.post(url, headers=headers, json=payload)
-        print("📤 Interakt Response Code:", response.status_code)
-        print("📤 Interakt Response:", response.text)
-        return response.status_code == 200
+        r = requests.post(url, headers=headers, json=payload)
+        print("📤 Interakt Session Msg Code:", r.status_code)
+        print("📤 Response:", r.text)
+        return r.status_code == 200
     except Exception as e:
-        print("❌ Interakt Send Error:", e)
+        print("❌ Session Msg Error:", e)
+        return False
+
+
+# ==========================================================
+# 📩 Send fallback template (outside 24 h window)
+# ==========================================================
+def send_template_message(mobile):
+    try:
+        url = "https://app.interakt.io/api/public/v2/template/"
+        payload = {
+            "countryCode": "+91",
+            "phoneNumber": str(mobile),
+            "callbackData": "karuvadukadai-fallback",
+            "templateName": "browse_catalog_on_whatsapp",   # 🔁 Replace with your actual template name in Interakt
+            "languageCode": "en",
+            "parameters": []
+        }
+        headers = {
+            "Authorization": f"Basic {INTERAKT_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        r = requests.post(url, headers=headers, json=payload)
+        print("📤 Template Msg Code:", r.status_code)
+        print("📤 Template Response:", r.text)
+        return r.status_code == 200
+    except Exception as e:
+        print("❌ Template Send Error:", e)
         return False
 
 
@@ -87,17 +106,17 @@ def send_whatsapp_message(mobile, message):
 def webhook():
     try:
         data = request.get_json(force=True)
-        print("📩 Incoming Webhook Raw:")
+        print("📩 Incoming Webhook:")
         print(json.dumps(data, indent=2, ensure_ascii=False))
 
-        customer = data.get("data", {}).get("customer", {})
-        msg_obj = data.get("data", {}).get("message", {})
+        msg_data = data.get("data", {}).get("message", {})
+        cust_data = data.get("data", {}).get("customer", {})
 
-        mobile = customer.get("phoneNumber")
-        msg_type = (msg_obj.get("type") or "").lower()
+        mobile = cust_data.get("phoneNumber")
+        msg_type = (msg_data.get("type") or "").lower()
 
-        # Try multiple possible paths for content
-        msg_text = msg_obj.get("content")
+        # Extract text content
+        msg_text = msg_data.get("content")
         if isinstance(msg_text, dict):
             msg_text = msg_text.get("text") or msg_text.get("body")
 
@@ -106,20 +125,18 @@ def webhook():
         print(f"💬 Text Extracted: {msg_text}")
 
         if not msg_text:
-            print("⚠️ No text content found, skipping.")
-            return jsonify({"status": "ignored"}), 200
-
-        if msg_type not in ["text"]:
-            print("⏸ Non-text message ignored.")
+            print("⚠️ No text found, skipping.")
             return jsonify({"status": "ignored"}), 200
 
         ai_reply = generate_ai_reply(msg_text)
-        sent = send_whatsapp_message(mobile, ai_reply)
 
-        if sent:
-            print("✅ AI reply sent to", mobile)
+        # Try sending via session first
+        success = send_session_message(mobile, ai_reply)
+        if not success:
+            print("⚠️ Session expired. Sending fallback template.")
+            send_template_message(mobile)
         else:
-            print("❌ Failed to send AI reply")
+            print("✅ AI reply sent successfully!")
 
         return jsonify({"status": "ok"}), 200
 
@@ -128,19 +145,10 @@ def webhook():
         return jsonify({"error": str(e)}), 500
 
 
-# ==========================================================
-# 🏠 Home
-# ==========================================================
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({
-        "status": "active",
-        "message": "Karuvadukadai WhatsApp AI Bot (universal Interakt) ✅"
-    })
+    return jsonify({"status": "active", "bot": "Karuvadukadai AI Hybrid"})
 
 
-# ==========================================================
-# 🚀 Run App
-# ==========================================================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
