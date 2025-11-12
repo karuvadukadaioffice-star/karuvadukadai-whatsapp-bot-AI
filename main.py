@@ -1,73 +1,49 @@
 from flask import Flask, request, jsonify
-import os
-import requests
-import json
+import requests, os
 
 app = Flask(__name__)
 
-# ================================
-# 🌍 Environment Variables
-# ================================
-INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
+# 🔑 Environment Variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-SHOP_URL = "https://karuvadukadai.com"
+INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
 
 # ================================
-# 🧠 Generate AI Reply (Tanglish)
+# 🤖 AI Reply Generator (OpenAI)
 # ================================
-def generate_ai_reply(user_text):
+def generate_ai_reply(user_message):
     try:
-        url = "https://api.openai.com/v1/chat/completions"
         headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {OPENAI_API_KEY}"
         }
-
-        payload = {
+        data = {
             "model": "gpt-3.5-turbo",
             "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are 'Karuvadukadai' — a friendly Tamil seafood seller bot 🐟.\n"
-                        "Reply in Tanglish (Tamil-English mix) warmly and helpfully.\n"
-                        f"Product links:\n"
-                        f"- Vanjaram Karuvadu → {SHOP_URL}/products/kingfish-karuvadu\n"
-                        f"- Nethili Karuvadu → {SHOP_URL}/products/nethili-dry-fish\n"
-                        f"- Ready to Eat → {SHOP_URL}/collections/ready-to-eat\n"
-                        f"- Combo Offers → {SHOP_URL}/collections/combo\n"
-                        "Keep tone friendly, short, and kind — like a local seller."
-                    )
-                },
-                {"role": "user", "content": user_text}
+                {"role": "system", "content": "You are a friendly Tamil-English assistant for karuvadukadai.com"},
+                {"role": "user", "content": user_message}
             ],
-            "max_tokens": 150,
-            "temperature": 0.8
+            "temperature": 0.7
         }
 
-        r = requests.post(url, headers=headers, json=payload)
-        data = r.json()
-
-        reply = data["choices"][0]["message"]["content"].strip()
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data)
+        response.raise_for_status()
+        reply = response.json()["choices"][0]["message"]["content"].strip()
         print("🧠 AI Reply:", reply)
         return reply
-
     except Exception as e:
-        print("❌ OpenAI error:", e)
-        return "Server busy irukku bro 😅 Konjam later try pannunga!"
+        print("❌ OpenAI Error:", e)
+        return "Server busy bro 😔. Try again after 1 min."
 
 # ================================
-# 💬 Send WhatsApp Message (Session Type)
+# 💬 Send WhatsApp Message (Interakt)
 # ================================
 def send_whatsapp_message(mobile, message):
     try:
         payload = {
             "countryCode": "+91",
             "phoneNumber": str(mobile),
-            "type": "text",   # ✅ Session message type
-            "message": {
-                "text": message
-            }
+            "type": "text",
+            "message": {"text": message}
         }
 
         headers = {
@@ -75,72 +51,51 @@ def send_whatsapp_message(mobile, message):
             "Content-Type": "application/json"
         }
 
-        r = requests.post(
-            "https://app.interakt.shop/api/public/message/",
-            json=payload,
-            headers=headers
-        )
+        url = "https://app.interakt.io/api/public/message/"
 
-        print("\n📤 WhatsApp Message Sent →")
-        print("Payload:", json.dumps(payload, indent=2))
-        print("Status:", r.status_code)
-        print("Response:", r.text)
-        print("📤 --------------------------\n")
+        response = requests.post(url, json=payload, headers=headers)
+        print("📤 Interakt Reply:", response.status_code, response.text)
+        return response.status_code == 200
 
     except Exception as e:
-        print("❌ Send message error:", e)
+        print("❌ Send Error:", e)
+        return False
 
 # ================================
-# 📩 Webhook (Handle Customer Message)
+# 🌊 Webhook Endpoint
 # ================================
-@app.route("/webhook", methods=["POST"])
+@app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         data = request.get_json()
-        print("\n📩 Incoming Webhook:", json.dumps(data, indent=2))
+        print("📩 Incoming Webhook:", data)
 
-        event = data.get("event", "")
+        event = data.get("event")
         if event != "message_received":
-            print("Ignored event:", event)
+            print("🧩 Ignored Event Type:", event)
             return jsonify({"status": "ignored"}), 200
 
         customer = data.get("data", {}).get("customer", {})
-        phone = customer.get("phoneNumber")
+        mobile = customer.get("phoneNumber")
+        message = data.get("data", {}).get("message", {}).get("content")
 
-        message_obj = data.get("data", {}).get("message", {})
-        message_text = (
-            message_obj.get("text")
-            or message_obj.get("body")
-            or message_obj.get("content")
-        )
+        if not mobile or not message:
+            print("⚠️ Missing phoneNumber or message content")
+            return jsonify({"status": "error"}), 400
 
-        if not phone or not message_text:
-            print("⚠️ Invalid webhook payload")
-            return jsonify({"error": "invalid"}), 400
-
-        print(f"📲 From {phone}: {message_text}")
-
-        # ✅ Generate AI reply
-        reply = generate_ai_reply(message_text)
-
-        # ✅ Send back to WhatsApp
-        send_whatsapp_message(phone, reply)
+        # Generate AI reply and send it
+        ai_reply = generate_ai_reply(message)
+        send_whatsapp_message(mobile, ai_reply)
 
         return jsonify({"status": "ok"}), 200
 
     except Exception as e:
-        print("❌ Webhook error:", e)
+        print("❌ Webhook Error:", e)
         return jsonify({"error": str(e)}), 500
 
-# ================================
-# 🌐 Home Route (For Testing)
-# ================================
-@app.route("/", methods=["GET"])
+@app.route('/', methods=['GET'])
 def home():
-    return jsonify({"status": "Karuvadukadai WhatsApp Bot is LIVE ✅"}), 200
+    return "Karuvadukadai WhatsApp Bot Active ✅"
 
-# ================================
-# 🚀 Run App (Render)
-# ================================
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
