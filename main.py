@@ -1,154 +1,89 @@
 from flask import Flask, request, jsonify
-import requests, os, json, datetime
+import requests
+import os
+import openai
 
 app = Flask(__name__)
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 INTERAKT_API_KEY = os.getenv("INTERAKT_API_KEY")
+WHATSAPP_SENDER = os.getenv("WHATSAPP_SENDER")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-print("===========================================")
-print("🚀 Karuvadukadai WhatsApp AI Bot (Hybrid) Starting...")
-print("✅ OpenAI Key Loaded:", "Yes" if OPENAI_API_KEY else "❌ Missing")
-print("✅ Interakt Key Loaded:", "Yes" if INTERAKT_API_KEY else "❌ Missing")
-print("===========================================")
+openai.api_key = OPENAI_API_KEY
 
 
-# ==========================================================
-# 🧠 Generate AI Reply
-# ==========================================================
-def generate_ai_reply(user_message):
-    try:
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": "gpt-3.5-turbo",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a friendly Tamil-English chatbot for Karuvadukadai.com. "
-                        "Keep replies short, relevant to seafood, dry fish, or delivery help."
-                    )
-                },
-                {"role": "user", "content": user_message}
-            ]
-        }
-        res = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data)
-        if res.status_code != 200:
-            print("❌ OpenAI Error:", res.text)
-            return "Server busy bro 😔 Try again later."
-
-        return res.json()["choices"][0]["message"]["content"]
-    except Exception as e:
-        print("❌ AI Exception:", e)
-        return "Error generating reply bro 😔"
+def send_whatsapp_message(to, text):
+    url = "https://api.interakt.ai/v1/public/message/"
+    headers = {
+        "Authorization": f"Bearer {INTERAKT_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "receiver": to,
+        "sender": WHATSAPP_SENDER,
+        "message_type": "text",
+        "text": {"body": text}
+    }
+    requests.post(url, json=payload)
 
 
-# ==========================================================
-# 💬 Send session message (inside 24 h window)
-# ==========================================================
-def send_session_message(mobile, message):
-    try:
-        url = "https://app.interakt.io/api/public/v2/message/"
-        payload = {
-            "countryCode": "+91",
-            "phoneNumber": str(mobile),
-            "callbackData": "karuvadukadai-ai",
-            "type": "Text",
-            "message": {"text": message}
-        }
-        headers = {
-            "Authorization": f"Basic {INTERAKT_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        r = requests.post(url, headers=headers, json=payload)
-        print("📤 Interakt Session Msg Code:", r.status_code)
-        print("📤 Response:", r.text)
-        return r.status_code == 200
-    except Exception as e:
-        print("❌ Session Msg Error:", e)
-        return False
-
-
-# ==========================================================
-# 📩 Send fallback template (outside 24 h window)
-# ==========================================================
-def send_template_message(mobile):
-    try:
-        url = "https://app.interakt.io/api/public/v2/template/"
-        payload = {
-            "countryCode": "+91",
-            "phoneNumber": str(mobile),
-            "callbackData": "karuvadukadai-fallback",
-            "templateName": "browse_catalog_on_whatsapp",   # 🔁 Replace with your actual template name in Interakt
-            "languageCode": "en",
-            "parameters": []
-        }
-        headers = {
-            "Authorization": f"Basic {INTERAKT_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        r = requests.post(url, headers=headers, json=payload)
-        print("📤 Template Msg Code:", r.status_code)
-        print("📤 Template Response:", r.text)
-        return r.status_code == 200
-    except Exception as e:
-        print("❌ Template Send Error:", e)
-        return False
-
-
-# ==========================================================
-# 🌊 Webhook Receiver
-# ==========================================================
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    try:
-        data = request.get_json(force=True)
-        print("📩 Incoming Webhook:")
-        print(json.dumps(data, indent=2, ensure_ascii=False))
 
-        msg_data = data.get("data", {}).get("message", {})
-        cust_data = data.get("data", {}).get("customer", {})
+    data = request.json
+    print("Incoming Payload:", data)
 
-        mobile = cust_data.get("phoneNumber")
-        msg_type = (msg_data.get("type") or "").lower()
+    # ----------------------------
+    # 1️⃣ HANDLE INTERAKT WORKFLOW WEBHOOK
+    # ----------------------------
+    if "from" in data and "message" in data:
+        user_number = str(data["from"])
+        user_message = data["message"]
+        print("Detected WORKFLOW message:", user_message)
 
-        # Extract text content
-        msg_text = msg_data.get("content")
-        if isinstance(msg_text, dict):
-            msg_text = msg_text.get("text") or msg_text.get("body")
+    # ----------------------------
+    # 2️⃣ HANDLE NORMAL INTERAKT WEBHOOK
+    # ----------------------------
+    elif (
+        data.get("type") == "message_received"
+        and data.get("data")
+        and data["data"].get("message")
+        and data["data"]["message"].get("text")
+    ):
+        user_number = data["data"]["customer"]["phone_number"]
+        user_message = data["data"]["message"]["text"]["body"]
+        print("Detected NORMAL message:", user_message)
 
-        print(f"📞 From: {mobile}")
-        print(f"💬 Type: {msg_type}")
-        print(f"💬 Text Extracted: {msg_text}")
+    else:
+        print("⚠️ No valid text message, skipping...")
+        return jsonify({"status": "ignored"})
 
-        if not msg_text:
-            print("⚠️ No text found, skipping.")
-            return jsonify({"status": "ignored"}), 200
+    # ----------------------------
+    # 3️⃣ GENERATE AI RESPONSE
+    # ----------------------------
+    completion = openai.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a helpful dry fish assistant for Karuvadukadai."},
+            {"role": "user", "content": user_message}
+        ]
+    )
 
-        ai_reply = generate_ai_reply(msg_text)
+    ai_reply = completion.choices[0].message.content
+    print("AI Reply:", ai_reply)
 
-        # Try sending via session first
-        success = send_session_message(mobile, ai_reply)
-        if not success:
-            print("⚠️ Session expired. Sending fallback template.")
-            send_template_message(mobile)
-        else:
-            print("✅ AI reply sent successfully!")
+    # ----------------------------
+    # 4️⃣ SEND AI REPLY TO WHATSAPP
+    # ----------------------------
+    send_whatsapp_message(user_number, ai_reply)
 
-        return jsonify({"status": "ok"}), 200
-
-    except Exception as e:
-        print("🔥 Webhook Exception:", e)
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"status": "success"})
 
 
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({"status": "active", "bot": "Karuvadukadai AI Hybrid"})
+    return "Bot Running OK"
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=10000)
